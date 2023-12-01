@@ -7,14 +7,13 @@
 // lcd	
 // led
 
-
 #include <stdio.h>
 
-int peltier()
+int peltier()//추가하드웨어필요
 {
     return 0;
 }
-int pump()
+int pump()//추가하드웨어필요
 {
     return 0;
 }
