@@ -7,6 +7,9 @@
 // lcd	
 // led
 
+#include <wiringPi2I2C.h>
+#include <wiringPi.h>
+#include <stdlib.h>
 #include <stdio.h>
 
 int peltier()//추가하드웨어필요
