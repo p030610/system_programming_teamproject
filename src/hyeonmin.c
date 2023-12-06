@@ -6,22 +6,49 @@
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
-#include <wiringPi.h>
-#include <softPwm.h>
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
+// SPI 설정
 static const char *DEVICE = "/dev/spidev0.0";
 static uint8_t MODE = 0;
 static uint8_t BITS = 8;
 static uint32_t CLOCK = 1000000;
 static uint16_t DELAY = 5;
 
-#define SERVO 1
-#define SERVO_MIN 5
-#define SERVO_MAX 25
-#define WIPER_CYCLE 5
+// PWM 설정
+#define PWM_EXPORT "/sys/class/pwm/pwmchip0/export"
+#define PWM_ENABLE "/sys/class/pwm/pwmchip0/pwm0/enable"
+#define PWM_PERIOD "/sys/class/pwm/pwmchip0/pwm0/period"
+#define PWM_DUTY_CYCLE "/sys/class/pwm/pwmchip0/pwm0/duty_cycle"
 
+#define BUFFER_MAX 256
+#define SERVO_MIN 1000000    // 서보 모터의 최소 위치에 해당하는 duty cycle (예: 1ms)
+#define SERVO_MAX 2000000    // 서보 모터의 최대 위치에 해당하는 duty cycle (예: 2ms)
+#define SERVO_PERIOD 20000000 // 서보 모터의 주기 (예: 20ms)
+#define WIPER_CYCLE 5        // 와이퍼 동작 횟수
+
+// PWM 관련 함수 정의
+static void PWMWrite(const char *file, int value) {
+    char buffer[BUFFER_MAX];
+    int fd, bytes_written;
+
+    fd = open(file, O_WRONLY);
+    if (fd < 0) {
+        fprintf(stderr, "Failed to open %s\n", file);
+        return;
+    }
+
+    bytes_written = snprintf(buffer, BUFFER_MAX, "%d", value);
+    write(fd, buffer, bytes_written);
+    close(fd);
+}
+
+static void servoControl(int pos) {
+    PWMWrite(PWM_DUTY_CYCLE, pos);
+}
+
+// 여기에 나머지 SPI 관련 함수 정의 (prepare, control_bits, readadc)
 static int prepare(int fd) {
   if (ioctl(fd, SPI_IOC_WR_MODE, &MODE) == -1) {
     perror("Can't set MODE");
@@ -75,37 +102,26 @@ int readadc(int fd, uint8_t channel) {
   return ((rx[1] << 8) & 0x300) | (rx[2] & 0xFF);
 }
 
-void servoControl(int pos){
-    softPwmWrite(SERVO, pos);
-}
-
 int main() {
     int fd, adcValue;
-    int pos = SERVO_MIN, cycleCount=0;  // 서보 모터 초기 위치
-    int dir =1;
 
-    // WiringPi 초기화
-    if (wiringPiSetup() == -1) {
-        return -1;
-    }
-
-    // SPI 디바이스 열기
+    // SPI 디바이스 열기 및 설정
     fd = open(DEVICE, O_RDWR);
     if (fd <= 0) {
         perror("Device open error");
         return -1;
     }
-
-    // SPI 설정
     if (prepare(fd) == -1) {
         perror("Device prepare error");
         return -1;
     }
 
-    // 서보 모터 설정
-    softPwmCreate(SERVO, 0, 200);
+    // PWM 설정
+    PWMWrite(PWM_EXPORT, 0);     // PWM export
+    PWMWrite(PWM_PERIOD, SERVO_PERIOD); // PWM 주기 설정
+    PWMWrite(PWM_ENABLE, 1);     // PWM 활성화
 
-   while (1) {
+    while (1) {
         // ADC 값 읽기
         adcValue = readadc(fd, 0);
         printf("ADC Value: %d\n", adcValue);
@@ -115,16 +131,20 @@ int main() {
             for (int i = 0; i < WIPER_CYCLE; i++) {
                 // 서보 모터를 최대 위치로 이동
                 servoControl(SERVO_MAX);
-                delay(500);
+                usleep(500000);
 
                 // 서보 모터를 최소 위치로 이동
                 servoControl(SERVO_MIN);
-                delay(500);
+                usleep(500000);
             }
         }
 
-        delay(1000);  // 다음 ADC 읽기까지 대기
+        usleep(1000000);  // 다음 ADC 읽기까지 대기
     }
+
+    // 종료 처리
+    PWMWrite(PWM_ENABLE, 0);
+    close(fd);
 
     return 0;
 }
