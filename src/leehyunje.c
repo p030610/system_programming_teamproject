@@ -22,7 +22,7 @@
 #define HIGH 1
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0])) //SPI readadc
 #define MAX_TIME 100
-#define DHT_PIN_1 0// GPIO pin 27
+#define DHT_PIN_1 2// GPIO pin 27
 #define buffersize 50
 
 
@@ -40,6 +40,12 @@ static uint8_t BITS = 8;
 static uint32_t CLOCK = 1000000;
 static uint16_t DELAY = 5;
 int clnt_sock; // 내 소켓
+
+void error_handling(char *message) { // 모든 소켓 관련 에러 핸들링
+  fputs(message, stderr);
+  fputc('\n', stderr);
+  exit(1);
+}
 
 static int GPIOExport(int pin)
 {
@@ -412,8 +418,8 @@ int main(int argc, char **argv) {
         printf("Usage: %s <IP> <port>\n", argv[0]); // 매개변수를 제대로 입력받지 못했다면 출력
         
     }
-
-    // 소켓 생성
+    
+    //소켓 생성
     clnt_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (clnt_sock == -1) error_handling("socket() error"); // clnt_sock의 파일 디스크립터 선언
 
@@ -431,19 +437,19 @@ int main(int argc, char **argv) {
 
     printf("Connection established\n"); // client가 server에 연결될 시 선언
 
-  
+    
   while (1) {
     pthread_t p_thread1; // 온습도 센서 스레드
     int status_1; // 온습도 센서 스레드 종료시 반환
     pthread_create(&p_thread1, NULL, measure1, NULL);
     pthread_join(p_thread1,(void**)&state);
    
-    printf("조도 value: %d\n", readadc(fd, 0)); // 조도 확인
-    printf("토양수분 value: %d\n", readadc(fd1, 2)); // 수분 확인
-    printf("수위센서 value: %d\n", readadc(fd2, 4)); // 수위센서 확인
-    printf("Temp: %d°C    Humidity: %d%%\n", temperature1, humidity1); 
+    printf("조도 value: %d\n", readadc(fd, 0)); // 조도
+    printf("토양수분 value: %d\n", readadc(fd1, 2)); // 수분
+    printf("수위센서 value: %d\n", readadc(fd2, 4)); // 수위센서 
+    printf("Temp: %d°C    Humidity: %d%%\n", temperature1, humidity1);
     
-    sprintf(buffer, "%d %d%% %d %d %d ",
+    sprintf(buffer, "p %d %d%% %d %d %d 0 ",
             temperature1, humidity1,  readadc(fd, 0), readadc(fd1, 2), readadc(fd2, 4));
     
     ssize_t sent_bytes = send(clnt_sock, buffer, strlen(buffer), 0);
