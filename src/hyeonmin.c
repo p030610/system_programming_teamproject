@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
@@ -18,9 +21,12 @@ static uint16_t DELAY = 5;
 
 // PWM 설정
 #define PWM_EXPORT "/sys/class/pwm/pwmchip0/export"
-#define PWM_ENABLE "/sys/class/pwm/pwmchip0/pwm0/enable"
-#define PWM_PERIOD "/sys/class/pwm/pwmchip0/pwm0/period"
-#define PWM_DUTY_CYCLE "/sys/class/pwm/pwmchip0/pwm0/duty_cycle"
+#define PWM_ENABLE_0 "/sys/class/pwm/pwmchip0/pwm0/enable"
+#define PWM_PERIOD_0 "/sys/class/pwm/pwmchip0/pwm0/period"
+#define PWM_DUTY_CYCLE_0 "/sys/class/pwm/pwmchip0/pwm0/duty_cycle"
+#define PWM_ENABLE_1 "/sys/class/pwm/pwmchip0/pwm1/enable"
+#define PWM_PERIOD_1 "/sys/class/pwm/pwmchip0/pwm1/period"
+#define PWM_DUTY_CYCLE_1 "/sys/class/pwm/pwmchip0/pwm1/duty_cycle"
 
 #define BUFFER_MAX 256
 #define SERVO_MIN 1000000    // 서보 모터의 최소 위치에 해당하는 duty cycle (예: 1ms)
@@ -45,7 +51,8 @@ static void PWMWrite(const char *file, int value) {
 }
 
 static void servoControl(int pos) {
-    PWMWrite(PWM_DUTY_CYCLE, pos);
+    PWMWrite(PWM_DUTY_CYCLE_0, pos);
+    PWMWrite(PWM_DUTY_CYCLE_1, pos);
 }
 
 // 여기에 나머지 SPI 관련 함수 정의 (prepare, control_bits, readadc)
@@ -102,7 +109,36 @@ int readadc(int fd, uint8_t channel) {
   return ((rx[1] << 8) & 0x300) | (rx[2] & 0xFF);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+    // 명령줄 인수 확인
+     if (argc != 3) {
+        printf("Usage: %s <Server IP> <Port>\n", argv[0]);
+        exit(1);
+    }
+
+    char* server_ip = argv[1];
+    int server_port = atoi(argv[2]);
+    int sock;
+    struct sockaddr_in serv_addr;
+
+    // 네트워크 소켓 생성 및 서버 연결
+    sock = socket(PF_INET, SOCK_STREAM, 0);
+    if (sock == -1) {
+        perror("socket() error");
+        return -1;
+    }
+
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr(server_ip);
+    serv_addr.sin_port = htons(server_port);
+
+    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1) {
+        perror("connect() error");
+        close(sock);
+        return -1;
+    }
+    
     int fd, adcValue;
 
     // SPI 디바이스 열기 및 설정
@@ -118,8 +154,10 @@ int main() {
 
     // PWM 설정
     PWMWrite(PWM_EXPORT, 0);     // PWM export
-    PWMWrite(PWM_PERIOD, SERVO_PERIOD); // PWM 주기 설정
-    PWMWrite(PWM_ENABLE, 1);     // PWM 활성화
+    PWMWrite(PWM_PERIOD_0, SERVO_PERIOD); // PWM 주기 설정
+    PWMWrite(PWM_ENABLE_0, 1);     // PWM 활성화
+    PWMWrite(PWM_PERIOD_1, SERVO_PERIOD); // PWM 주기 설정
+    PWMWrite(PWM_ENABLE_1, 1);     // PWM 활성화
 
     while (1) {
         // ADC 값 읽기
@@ -127,8 +165,15 @@ int main() {
         printf("ADC Value: %d\n", adcValue);
 
         // 비 감지 여부에 따른 서보 모터 제어
-        if (adcValue < 900) {  // 비 감지
-            for (int i = 0; i < WIPER_CYCLE; i++) {
+        if (adcValue < 700 && adcValue != 0) {  // 비 감지
+          char buffer[BUFFER_MAX];
+          snprintf(buffer, sizeof(buffer), "w 0 0 0 0 0 %d ", adcValue);
+          // 서버에 ADC값 전송
+          if(write(sock, buffer, strlen(buffer)) == -1) {
+            perror("write() error");
+            break;
+          }
+          for (int i = 0; i < WIPER_CYCLE; i++) {
                 // 서보 모터를 최대 위치로 이동
                 servoControl(SERVO_MAX);
                 usleep(500000);
@@ -136,15 +181,18 @@ int main() {
                 // 서보 모터를 최소 위치로 이동
                 servoControl(SERVO_MIN);
                 usleep(500000);
-            }
+          }
         }
 
         usleep(1000000);  // 다음 ADC 읽기까지 대기
     }
 
     // 종료 처리
-    PWMWrite(PWM_ENABLE, 0);
+    close(sock);
+    PWMWrite(PWM_ENABLE_0, 0);
+    PWMWrite(PWM_ENABLE_1, 0);
     close(fd);
 
     return 0;
 }
+
