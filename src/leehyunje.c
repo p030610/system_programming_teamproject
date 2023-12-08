@@ -7,11 +7,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <unistd.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
 
 #define PWM 0 // gpio 18
 #define IN 0
@@ -20,11 +22,15 @@
 #define HIGH 1
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0])) //SPI readadc
 #define MAX_TIME 100
-#define DHT_PIN_1 0 // GPIO pin 17
-#define buzzer 27 // GPIO pin 27 
+#define DHT_PIN_1 0// GPIO pin 27
+#define buffersize 50
 
 
 #define MAX_TIME 100
+#define VALUE_MAX 40
+#define DIRECTION_MAX 128
+
+
 
 static const char *water = "/dev/spidev0.0"; //수위센서 //CH4
 static const char *light = "/dev/spidev0.0"; // 조도 센서     //CH0
@@ -33,9 +39,7 @@ static uint8_t MODE = 0;
 static uint8_t BITS = 8;
 static uint32_t CLOCK = 1000000;
 static uint16_t DELAY = 5;
-
-#define VALUE_MAX 40
-#define DIRECTION_MAX 128
+int clnt_sock; // 내 소켓
 
 static int GPIOExport(int pin)
 {
@@ -271,9 +275,12 @@ static int PWMWriteDutyCycle(int pwmnum, int value) {
 }
 
 
+
+
+// 여기서부터 thread 처리 
 int readDHT11(int *temperature, int *humidity, int DHT_PIN)
 {
-      if (wiringPiSetup() == -1)
+    if (wiringPiSetup() == -1)
         return -1;
 
     int dht_data[5] = {0, 0, 0, 0, 0};
@@ -342,11 +349,12 @@ int readDHT11(int *temperature, int *humidity, int DHT_PIN)
     return 0;
 }
 
-int temperature1, humidity1;
+
+int temperature1;
+int humidity1;
 void *measure1()
 {
     readDHT11(&temperature1, &humidity1, DHT_PIN_1);
-    printf("Temp: %d°C    Humidity: %d%%\n", temperature1, humidity1);
     pthread_exit(0);
 }
 
@@ -355,11 +363,17 @@ int main(int argc, char **argv) {
   int fd = open(light, O_RDWR);
   int fd1 = open(soil, O_RDWR);
   int fd2 = open(water,O_RDWR);
-  int temperature1, humidity1;
+  int temthread;
+  int state;
+  char buffer[buffersize];
   clock_t start_t, end_t;
   double time;
 
-   PWMExport(PWM);
+  struct sockaddr_in serv_addr; 
+
+
+
+    PWMExport(PWM);
     PWMWritePeriod(PWM, 10000000);
     PWMWriteDutyCycle(PWM, 0);
     PWMEnable(PWM);
@@ -394,17 +408,56 @@ int main(int argc, char **argv) {
     return -1;
   }
 
+  if (argc != 3) {
+        printf("Usage: %s <IP> <port>\n", argv[0]); // 매개변수를 제대로 입력받지 못했다면 출력
+        
+    }
+
+    // 소켓 생성
+    clnt_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (clnt_sock == -1) error_handling("socket() error"); // clnt_sock의 파일 디스크립터 선언
+
+
+    memset(&serv_addr, 0, sizeof(serv_addr));    // serv_addr 구조체 모두 초기화
+    serv_addr.sin_family = AF_INET;             //IPv4로 설정
+    serv_addr.sin_addr.s_addr = inet_addr(argv[1]); //문자열로 입력된 IP를 바이너리 표현으로 변경
+    serv_addr.sin_port = htons(atoi(argv[2])); // 문자열로 입력된 port를 int로 변경 후 호스트 바이트 순서에서 네트워크 바이트순서로 변경 - > 아키텍쳐마다 엔디안이 다를 수 있으므로
+
+
+    // 서버에 연결
+    if (connect(clnt_sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1) { // client 소켓을 지정한 서버소켓에 연결 시도
+        error_handling("connect() error");
+    }
+
+    printf("Connection established\n"); // client가 server에 연결될 시 선언
+
+  
   while (1) {
     pthread_t p_thread1; // 온습도 센서 스레드
     int status_1; // 온습도 센서 스레드 종료시 반환
     pthread_create(&p_thread1, NULL, measure1, NULL);
-    printf("조도 value: %d\n", readadc(fd, 0)); // 조도
-    printf("토양수분 value: %d\n", readadc(fd1, 2)); // 수분
-    printf("수위센서 value: %d\n", readadc(fd2, 4)); // 수위센서 
+    pthread_join(p_thread1,(void**)&state);
+   
+    printf("조도 value: %d\n", readadc(fd, 0)); // 조도 확인
+    printf("토양수분 value: %d\n", readadc(fd1, 2)); // 수분 확인
+    printf("수위센서 value: %d\n", readadc(fd2, 4)); // 수위센서 확인
+    printf("Temp: %d°C    Humidity: %d%%\n", temperature1, humidity1); 
     
+    sprintf(buffer, "%d %d%% %d %d %d ",
+            temperature1, humidity1,  readadc(fd, 0), readadc(fd1, 2), readadc(fd2, 4));
     
-    PWMWriteDutyCycle(PWM, 100000);
+    ssize_t sent_bytes = send(clnt_sock, buffer, strlen(buffer), 0);
+        if (sent_bytes == -1) {
+            error_handling("send() error");
+        }
+    
+    if( readadc(fd2, 4) < 460)
+    {
+    PWMWriteDutyCycle(PWM, 5000);
+    }
+    else{
+      PWMWriteDutyCycle(PWM, 0); 
+    }
     usleep(1000000);
   }
 }
-
