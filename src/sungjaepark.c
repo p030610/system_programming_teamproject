@@ -6,16 +6,20 @@
 // 차양막(dc모터)	
 // lcd	
 
-#define MT_IN1 3
-#define MT_IN2 4
-#define MT_IN3 5
-#define MT_IN4 6
+
+
+#define PWM_EXPORT "/sys/class/pwm/pwmchip0/export"
+#define PWM_ENABLE "/sys/class/pwm/pwmchip0/pwm0/enable"
+#define PWM_PERIOD "/sys/class/pwm/pwmchip0/pwm0/period"
+#define PWM_DUTY_CYCLE "/sys/class/pwm/pwmchip0/pwm0/duty_cycle"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#include <wiringPi.h>
+
 
 #define IN 0
 #define OUT 1
@@ -26,98 +30,28 @@
 #define VALUE_MAX 256
 #define DIRECTION_MAX 256
 
-static int PWMExport(int pwmnum) {
-#define BUFFER_MAX 3
-  char buffer[BUFFER_MAX];
-  int fd, byte;
+#define BUFFER_MAX 256
+#define SERVO_MIN 1000000    // 서보 모터의 최소 위치에 해당하는 duty cycle (예: 1ms)
+#define SERVO_MAX 2000000    // 서보 모터의 최대 위치에 해당하는 duty cycle (예: 2ms)
+#define SERVO_PERIOD 20000000 // 서보 모터의 주기 (예: 20ms)
+#define WIPER_CYCLE 5        // 와이퍼 동작 횟수
 
-  // TODO: Enter the export path.
-  fd = open("/sys/class/pwm/pwmchip0/export", O_WRONLY);
-  if (-1 == fd) {
-    fprintf(stderr, "Failed to open export for export!\n");
-    return (-1);
-  }
+static void PWMWrite(const char *file, int value) {
+    char buffer[BUFFER_MAX];
+    int fd, bytes_written;
 
-  byte = snprintf(buffer, BUFFER_MAX, "%d", pwmnum);
-  write(fd, buffer, byte);
-  close(fd);
+    fd = open(file, O_WRONLY);
+    if (fd < 0) {
+        fprintf(stderr, "Failed to open %s\n", file);
+        return;
+    }
 
-  sleep(1);
-
-  return (0);
-}
-
-static int PWMEnable(int pwmnum) {
-  static const char s_enable_str[] = "1";
-
-  char path[DIRECTION_MAX];
-  int fd;
-
-  // TODO: Enter the enable path.
-  snprintf(path, DIRECTION_MAX, "/sys/class/pwm/pwmchip0/pwm0/enable", pwmnum);
-  fd = open(path, O_WRONLY);
-  if (-1 == fd) {
-    fprintf(stderr, "Failed to open in enable!\n");
-    return -1;
-  }
-
-  write(fd, s_enable_str, strlen(s_enable_str));
-  close(fd);
-
-  return (0);
-}
-
-static int PWMWritePeriod(int pwmnum, int value) {
-  char s_value_str[VALUE_MAX];
-  char path[VALUE_MAX];
-  int fd, byte;
-
-  // TODO: Enter the period path.
-  snprintf(path, VALUE_MAX, "/sys/class/pwm/pwmchip0/pwm0/period", pwmnum);
-  fd = open(path, O_WRONLY);
-  if (-1 == fd) {
-    fprintf(stderr, "Failed to open in period!\n");
-    return (-1);
-  }
-  byte = snprintf(s_value_str, VALUE_MAX, "%d", value);
-
-  if (-1 == write(fd, s_value_str, byte)) {
-    fprintf(stderr, "Failed to write value in period!\n");
+    bytes_written = snprintf(buffer, BUFFER_MAX, "%d", value);
+    write(fd, buffer, bytes_written);
     close(fd);
-    return -1;
-  }
-  close(fd);
-
-  return (0);
 }
-
-static int PWMWriteDutyCycle(int pwmnum, int value) {
-  char s_value_str[VALUE_MAX];
-  char path[VALUE_MAX];
-  int fd, byte;
-
-  // TODO: Enter the duty_cycle path.
-  snprintf(path, VALUE_MAX, "/sys/class/pwm/pwmchip0/pwm0/duty_cycle", pwmnum);
-  fd = open(path, O_WRONLY);
-  if (-1 == fd) {
-    fprintf(stderr, "Failed to open in duty cycle!\n");
-    return (-1);
-  }
-  byte = snprintf(s_value_str, VALUE_MAX, "%d", value);
-
-  if (-1 == write(fd, s_value_str, byte)) {
-    fprintf(stderr, "Failed to write value in duty cycle!\n");
-    close(fd);
-    return -1;
-  }
-  close(fd);
-
-  return (0);
-}
-
 
 static int GPIOExport(int pin) {
-    #define BUFFER_MAX 3
     char buffer[BUFFER_MAX];
     ssize_t bytes_written;
     int fd;
@@ -213,54 +147,19 @@ int led()
 int main()
 {
 
-    PWMExport(0);
-    PWMWritePeriod(0, 25);
-    PWMWriteDutyCycle(0, 0);
-    PWMEnable(0);
+  if(wiringPiSetupPhys() == -1)
+      return -1;
 
-    if (GPIOExport(17) == -1) {
-    return 1;
-    }
+  pinMode(11, 1);
+  pinMode(12, 1);
+  pinMode(15, 1);
+  pinMode(16, 1);
 
-    if (GPIODirection(17, OUT) == -1) {
-        return 2;
-    }
-
-    if (GPIOWrite(17, 0) == -1) {
-        return 3;
-    }
-
-    while (1) {
-        PWMWriteDutyCycle(0, 25);
-        usleep(1000);
-    }
+  digitalWrite(11, HIGH);
+  digitalWrite(12, LOW);
+  digitalWrite(15, HIGH);
+  digitalWrite(16, LOW);
 
 
-    // if (GPIOExport(14) == -1) {
-    // return 1;
-    // }
-    
-
-    // if (GPIODirection(14, OUT) == -1) {
-    //     return 2;
-    // }
-    
-
-    // do {
-    //     if (GPIOWrite(15, 1) == -1) {
-    //     return 3;
-    //     }
-        
-    //     printf("abc");
-    //     usleep(10);
-    // } while (1);
-
-    // if (GPIOUnexport(14) == -1) {
-    //     return 4;
-    // }
-    // if (GPIOUnexport(17) == -1) {
-    //     return 4;
-    // }
-
-    return 0;
+  return 0;
 }
