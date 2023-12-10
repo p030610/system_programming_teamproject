@@ -1,5 +1,6 @@
 {
     "files.associations": {
+<<<<<<< HEAD
         "stdlib.h": "c",
         "unistd.h": "c",
         "wiringpi.h": "c",
@@ -7,5 +8,8 @@
         "types.h": "c",
         "string.h": "c",
         "stdio.h": "c"
+=======
+        "stdlib.h": "c"
+>>>>>>> 016028d67ade96de717970cd49b36d774ff27fc9
     }
 }

@@ -32,6 +32,7 @@ int main()
     fd = wiringPiI2CSetup(I2C_ADDR);
 
     lcd_init();
+<<<<<<< HEAD
     
     char buffer[100];
     
@@ -46,6 +47,14 @@ int main()
         
         delay(3000); // 3 seconds delay
         // printf("ing..\n");
+=======
+
+    while (1)
+    {
+        lcd_string("10      ", LCD_LINE_1);
+        lcd_string("20      ", LCD_LINE_2);
+        delay(3000); // 3 seconds delay
+>>>>>>> 016028d67ade96de717970cd49b36d774ff27fc9
     }
 
     return 0;
@@ -93,4 +102,8 @@ void lcd_string(const char *message, int line)
     {
         lcd_byte(message[i], LCD_CHR);
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 016028d67ade96de717970cd49b36d774ff27fc9
