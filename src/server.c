@@ -9,7 +9,6 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-<<<<<<< HEAD
 #include <wiringPi.h>
 #include <wiringPiI2C.h>
 
@@ -122,64 +121,19 @@ void* execute_outputs(void* arg)
     int groundhumint = 0;
     int waterint = 0;
     int rainint = 0;
-=======
-
-
-#define buffersize 1000
-
-void error_handling(char *message) { // 모든 소켓 관련 에러 핸들링
-  fputs(message, stderr);
-  fputc('\n', stderr);
-  exit(1);
-}
-
-
-// // gogoclient 서버에 접속하는 client들이 스레드를 통해서 동시 출력이 가능할 수 있도록 하는 함수 gogo 
-// void* gogoclient(void* arg) { // 여기서 인수 = client의 파일 스크립터를 가르키는 주소
-//     int clnt_sock = *(int*)arg; // 그 주소를 int로 바꿈 dup2 , close int를 충족시켜주기 위함
-//     int state;
-//     char buffer[50];
-//     pthread_t shell_thread; // shell함수로 출발하기 위함
-//     pthread_create(&shell_thread, NULL, shell, NULL); // shell 함수를 스레드로 실행시킴
-
-//     char msg[256] = {0};
-
-//     read(clnt_sock, msg, sizeof(msg));
-    
-    
-//     // 이시점에서 bash프로그램을 터미널에서 입출력을 담당할 수 있음
-
-
-//     pthread_join(shell_thread, NULL); // 위 스레드가 종료될때까지 대기 -> 클라이언트가 종료할때까지
-
-//     pthread_exit(&state);
-//     close(clnt_sock); // 손님파일 디스크립터 초기화
-  
-
-//     return NULL;
-// }
-
-void* execute_outputs(void* arg)
-{
-    int state;
->>>>>>> 016028d67ade96de717970cd49b36d774ff27fc9
     int clnt_sock = *(int*)arg;
     pthread_t pi_thread;
 
     char msg[256] = {0};
 
-<<<<<<< HEAD
     fd = wiringPiI2CSetup(I2C_ADDR);
 
     lcd_init();
-=======
->>>>>>> 016028d67ade96de717970cd49b36d774ff27fc9
 
     while(1)
     {
         read(clnt_sock, msg, sizeof(msg));
 
-<<<<<<< HEAD
         usleep(50000);
 
         char * tok;
@@ -301,16 +255,6 @@ void* execute_outputs(void* arg)
 }
 
 
-=======
-        usleep(5000000);
-
-        printf("%s\n", msg);
-    }
-
-
-}
-
->>>>>>> 016028d67ade96de717970cd49b36d774ff27fc9
 int main(int argc, char* argv[]) {
     char buf[buffersize]; // while문 종료를 위한 buffer
     int serv_sock,clnt_sock = -1;          // 서버 소켓, accept를 통해 입력받을 client 소켓의 파일 디스크립터 선언
