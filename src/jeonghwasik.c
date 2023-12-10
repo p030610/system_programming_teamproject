@@ -44,12 +44,15 @@
 #define E_DELAY 0.0005
 
 int fd;
-
+int avg_temperature, avg_humidity;
 void lcd_init();
 void lcd_byte(int bits, int mode);
 void lcd_toggle_enable(int bits);
 void lcd_string(const char *message, int line);
 
+/* /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+GPIO related functions
+/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\*/
 static int GPIOExport(int pin)
 {
 #define BUFFER_MAX 3
@@ -140,7 +143,9 @@ static int GPIOUnexport(int pin)
     return 0;
 }
 
-// echo 0 > export
+/* /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+PWM related functions
+/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\*/
 static int PWMExport(int pwmnum)
 {
 #define BUFFER_MAX 3
@@ -163,7 +168,6 @@ static int PWMExport(int pwmnum)
     return 0;
 }
 
-// echo 1 > pwm0/enable
 static int PWMEnable(int pwmnum)
 {
     static const char s_enable_str[] = "1";
@@ -185,7 +189,6 @@ static int PWMEnable(int pwmnum)
     return 0;
 }
 
-// echo 10000000 > pwm0/period
 static int PWMWritePeriod(int pwmnum, int value)
 {
     char s_value_str[VALUE_MAX];
@@ -212,7 +215,6 @@ static int PWMWritePeriod(int pwmnum, int value)
     return 0;
 }
 
-// echo 8000000 > pwm0/duty_cycle
 static int PWMWriteDutyCycle(int pwmnum, int value)
 {
     char s_value_str[VALUE_MAX];
@@ -239,6 +241,9 @@ static int PWMWriteDutyCycle(int pwmnum, int value)
     return 0;
 }
 
+/* /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+DHT11(temperature, humidity) related functions
+/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\*/
 int readDHT11(int *temperature, int *humidity, int DHT_PIN)
 {
     if (wiringPiSetup() == -1)
@@ -308,6 +313,7 @@ int readDHT11(int *temperature, int *humidity, int DHT_PIN)
     return 0;
 }
 
+// measure first temperature and first humidity using DHT11-1
 int temperature1, humidity1;
 void *measure1()
 {
@@ -316,6 +322,7 @@ void *measure1()
     pthread_exit(0);
 }
 
+// measure second temperature and second humidity using DHT11-2
 int temperature2, humidity2;
 void *measure2()
 {
@@ -324,16 +331,16 @@ void *measure2()
     pthread_exit(0);
 }
 
-int avg_temperature, avg_humidity;
+/* /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+MAIN
+/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\*/
 int main(int argc, char *argv[])
 {
-
-    wiringPiSetup();
-    fd = wiringPiI2CSetup(I2C_ADDR);
-
     char buffer[100];
+    wiringPiSetup();
+    fd = wiringPiI2CSetup(I2C_ADDR); // I2C setup for LCD
 
-    // socket related code
+    // Build CLIENT SOCKET
     if (argc != 3)
     {
         printf("Usage: %s <Server IP> <Port>\n", argv[0]);
@@ -345,7 +352,7 @@ int main(int argc, char *argv[])
     int sock;
     struct sockaddr_in serv_addr;
 
-    // 네트워크 소켓 생성 및 서버 연결
+    // create CLIENT SOCKET
     sock = socket(PF_INET, SOCK_STREAM, 0);
     if (sock == -1)
     {
@@ -353,75 +360,79 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    // binding IP and PORT to the SOCKET
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = inet_addr(server_ip);
     serv_addr.sin_port = htons(server_port);
 
+    // connect to SERVER SOCKET
     if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
     {
         perror("connect() error");
         close(sock);
         return -1;
     }
-
     printf("Connection established\n");
 
+    // set up GPIO for LED
     if (GPIOExport(LED_PIN) == -1)
     {
         return 1;
     }
-
     if (GPIODirection(LED_PIN, OUT) == -1)
     {
         return 2;
     }
 
+    // set up PWM for LED
     PWMExport(PWM);
     PWMWritePeriod(PWM, 10000000);
     PWMWriteDutyCycle(PWM, 0);
     PWMEnable(PWM);
 
+    // initialize LCD
     lcd_init();
 
     while (1)
     {
-
         pthread_t p_thread1, p_thread2;
         int status_1, status_2;
-        pthread_create(&p_thread1, NULL, measure1, NULL);
-        pthread_create(&p_thread2, NULL, measure2, NULL);
-        delay(1000); // 2-second delay
+        pthread_create(&p_thread1, NULL, measure1, NULL); // create a thread for temp1, humidity1
+        pthread_create(&p_thread2, NULL, measure2, NULL); // create another thread for temp2, humidity2
+        delay(1000);                                      // 1 second delay
 
-        avg_temperature = (temperature1 + temperature2) / 2;
-        avg_humidity = (humidity1 + humidity2) / 2;
+        avg_temperature = (temperature1 + temperature2) / 2; // average temperature
+        avg_humidity = (humidity1 + humidity2) / 2;          // average humidity
         printf("Temp: %d°C    Humidity: %d%%\n", avg_temperature, avg_humidity);
 
-        if (avg_temperature >= 10) // 10도 이상이면 초록불의 밝기를 통해 온도의 정도 나타냄
+        if (avg_temperature >= 10) // 10도(식물 관련 threshold) 이상이면 초록불의 밝기를 통해 온도의 정도 나타냄
         {
             GPIOWrite(LED_PIN, 0);
             PWMWriteDutyCycle(PWM, avg_temperature * 200000);
         }
-        else // 10도 미만이면 붉은불 표시
+        else // 10도(식물 관련 threshold) 미만이면 붉은불 표시
         {
             GPIOWrite(LED_PIN, 1);
         }
 
-        // send to the server socket
+        // send (average temperature, average humidity) to the SERVER SOCKET
         sprintf(buffer, "w %d %d 0 0 0 0 ", avg_temperature, avg_humidity);
-
-        lcd_string(buffer, LCD_LINE_1);
-
-        // 서버에 ADC값 전송
         if (write(sock, buffer, strlen(buffer)) == -1)
         {
             perror("write() error");
             break;
         }
+
+        // show (average temperature, average humidity) using LCD
+        lcd_string(buffer, LCD_LINE_1);
     }
     return 0;
 }
 
+/* /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+LCD related functions
+/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\*/
 void lcd_init()
 {
     lcd_byte(0x33, LCD_CMD);
