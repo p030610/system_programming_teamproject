@@ -369,11 +369,9 @@ int main(int argc, char **argv) {
   int fd = open(light, O_RDWR);
   int fd1 = open(soil, O_RDWR);
   int fd2 = open(water,O_RDWR);
-  int temthread;
-  int state;
+  
   char buffer[buffersize];
-  clock_t start_t, end_t;
-  double time;
+
 
   struct sockaddr_in serv_addr; 
 
@@ -440,7 +438,7 @@ int main(int argc, char **argv) {
     
   while (1) {
     pthread_t p_thread1; // 온습도 센서 스레드
-    int status_1; // 온습도 센서 스레드 종료시 반환
+    int state; // 온습도 센서 스레드 종료시 반환
     pthread_create(&p_thread1, NULL, measure1, NULL);
     pthread_join(p_thread1,(void**)&state);
    
